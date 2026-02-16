@@ -34,13 +34,13 @@ If you find Scriptlet Runner useful, please consider supporting its development:
 
 ### Download
 
-Download the latest DMG from the [Releases](https://github.com/thejustinjames/scriptletRunner/releases) page.
+Download the latest DMG from the [Releases](https://github.com/thejustinjames/Scriptlet-Runner/releases) page.
 
 ### Build from Source
 
 ```bash
-git clone https://github.com/thejustinjames/scriptletRunner.git
-cd scriptletRunner
+git clone https://github.com/thejustinjames/Scriptlet-Runner.git
+cd Scriptlet-Runner
 ./build.sh
 ```
 
