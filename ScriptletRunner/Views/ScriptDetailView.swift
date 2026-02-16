@@ -80,17 +80,7 @@ struct ScriptDetailView: View {
 
             // Arguments section
             if !arguments.isEmpty {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Arguments & Options")
-                        .font(.headline)
-
-                    ForEach($arguments) { $arg in
-                        ArgumentRow(argument: $arg)
-                    }
-                }
-                .padding()
-                .background(Color(nsColor: .controlBackgroundColor))
-                .cornerRadius(8)
+                ArgumentsSection(arguments: $arguments)
             }
 
             // Run button
@@ -163,53 +153,108 @@ struct IconPickerView: View {
     }
 }
 
-struct ArgumentRow: View {
-    @Binding var argument: ScriptArgument
+struct ArgumentsSection: View {
+    @Binding var arguments: [ScriptArgument]
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            // Show toggle for non-choice arguments
-            if argument.choices == nil {
-                Toggle("", isOn: $argument.isEnabled)
-                    .labelsHidden()
-            }
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Arguments & Options")
+                .font(.headline)
 
-            VStack(alignment: .leading, spacing: 4) {
-                // For choice arguments, show as picker
-                if let choices = argument.choices {
-                    Text("Mode")
-                        .font(.system(.body, design: .monospaced))
-                        .fontWeight(.medium)
+            ForEach(0..<arguments.count, id: \.self) { index in
+                HStack {
+                    Toggle(isOn: Binding(
+                        get: { arguments[index].isEnabled },
+                        set: { newValue in
+                            arguments[index].isEnabled = newValue
+                            if arguments[index].isPositional {
+                                arguments[index].value = newValue ? (arguments[index].placeholder ?? "") : ""
+                            }
+                        }
+                    )) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(arguments[index].isPositional ? (arguments[index].placeholder ?? "option") : arguments[index].displayName)
+                                .font(.system(.body, design: .monospaced))
+                                .fontWeight(.medium)
 
-                    Picker("", selection: $argument.value) {
-                        Text("Select...").tag("")
-                        ForEach(choices, id: \.self) { choice in
-                            Text(choice).tag(choice)
+                            if !arguments[index].description.isEmpty {
+                                Text(arguments[index].description)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
                         }
                     }
-                    .pickerStyle(.segmented)
-                    .frame(maxWidth: 400)
-                    .onChange(of: argument.value) { newValue in
-                        argument.isEnabled = !newValue.isEmpty
-                    }
-                } else {
-                    Text(argument.displayName)
-                        .font(.system(.body, design: .monospaced))
-                        .fontWeight(.medium)
+                    .toggleStyle(.checkbox)
 
-                    Text(argument.description)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    Spacer()
+                }
+                .padding(.vertical, 2)
+            }
+        }
+        .padding()
+        .background(Color(nsColor: .controlBackgroundColor))
+        .cornerRadius(8)
+    }
+}
 
-                    if argument.requiresValue && argument.isEnabled {
-                        TextField(argument.placeholder ?? "Value", text: $argument.value)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(maxWidth: 300)
+struct ArgumentRowSimple: View {
+    @Binding var isEnabled: Bool
+    @Binding var value: String
+    let displayName: String
+    let description: String
+    let placeholder: String?
+    let isPositional: Bool
+    let choices: [String]?
+    let requiresValue: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let choices = choices {
+                // Choice picker
+                Text("Mode")
+                    .font(.system(.body, design: .monospaced))
+                    .fontWeight(.medium)
+
+                Picker("Select mode", selection: $value) {
+                    Text("Select...").tag("")
+                    ForEach(choices, id: \.self) { choice in
+                        Text(choice).tag(choice)
                     }
                 }
-            }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 400)
+                .onChange(of: value) { newValue in
+                    isEnabled = !newValue.isEmpty
+                }
+            } else {
+                // Use native Toggle for all other options
+                Toggle(isOn: $isEnabled) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(isPositional ? (placeholder ?? "option") : displayName)
+                            .font(.system(.body, design: .monospaced))
+                            .fontWeight(.medium)
 
-            Spacer()
+                        if !description.isEmpty {
+                            Text(description)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .toggleStyle(.checkbox)
+                .onChange(of: isEnabled) { newValue in
+                    if isPositional {
+                        value = newValue ? (placeholder ?? "") : ""
+                    }
+                }
+
+                if requiresValue && isEnabled && !isPositional {
+                    TextField(placeholder ?? "Value", text: $value)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 300)
+                        .padding(.leading, 20)
+                }
+            }
         }
         .padding(.vertical, 4)
     }

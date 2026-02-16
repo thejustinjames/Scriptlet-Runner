@@ -49,9 +49,13 @@ struct ScriptArgument: Identifiable, Hashable, Codable {
 
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
+        hasher.combine(isEnabled)
+        hasher.combine(value)
     }
 
     static func == (lhs: ScriptArgument, rhs: ScriptArgument) -> Bool {
-        lhs.id == rhs.id
+        lhs.id == rhs.id &&
+        lhs.isEnabled == rhs.isEnabled &&
+        lhs.value == rhs.value
     }
 }
