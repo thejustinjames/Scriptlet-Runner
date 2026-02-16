@@ -55,6 +55,40 @@ struct ScriptletRunnerApp: App {
                 }
             }
 
+            // Edit Menu - Console Search
+            CommandGroup(after: .textEditing) {
+                Button("Find in Console") {
+                    NotificationCenter.default.post(name: NSNotification.Name("ToggleConsoleSearch"), object: nil)
+                }
+                .keyboardShortcut("f", modifiers: .command)
+            }
+
+            // Scripts Menu - Quick Access
+            CommandMenu("Scripts") {
+                ForEach(1...9, id: \.self) { index in
+                    Button("Run Script \(index)") {
+                        NotificationCenter.default.post(
+                            name: NSNotification.Name("QuickRunScript"),
+                            object: nil,
+                            userInfo: ["index": index - 1]
+                        )
+                    }
+                    .keyboardShortcut(KeyEquivalent(Character("\(index)")), modifiers: .command)
+                }
+
+                Divider()
+
+                Button("Refresh Scripts") {
+                    NotificationCenter.default.post(name: NSNotification.Name("RefreshScripts"), object: nil)
+                }
+                .keyboardShortcut("r", modifiers: .command)
+
+                Button("Run Selected Script") {
+                    NotificationCenter.default.post(name: NSNotification.Name("RunSelectedScript"), object: nil)
+                }
+                .keyboardShortcut(.return, modifiers: .command)
+            }
+
             // Help Menu
             CommandGroup(replacing: .help) {
                 Button("Scriptlet Runner Help") {
@@ -86,6 +120,7 @@ struct ScriptletRunnerApp: App {
 struct SettingsWindowView: View {
     @AppStorage("scanLocations") private var scanLocationsData: Data = Data()
     @AppStorage("appearanceMode") private var appearanceModeRaw: String = AppearanceMode.system.rawValue
+    @AppStorage("clearConsoleOnRun") private var clearConsoleOnRun: Bool = true
 
     private var scanLocations: [ScanLocation] {
         (try? JSONDecoder().decode([ScanLocation].self, from: scanLocationsData)) ?? []
@@ -108,7 +143,8 @@ struct SettingsWindowView: View {
             appearanceMode: Binding(
                 get: { appearanceMode },
                 set: { appearanceModeRaw = $0.rawValue }
-            )
+            ),
+            clearConsoleOnRun: $clearConsoleOnRun
         )
     }
 }

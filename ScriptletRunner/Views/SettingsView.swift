@@ -19,6 +19,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var locations: [ScanLocation]
     @Binding var appearanceMode: AppearanceMode
+    @Binding var clearConsoleOnRun: Bool
     @State private var selectedLocation: ScanLocation?
 
     var body: some View {
@@ -107,6 +108,24 @@ struct SettingsView: View {
             .padding()
             .tabItem {
                 Label("Appearance", systemImage: "paintbrush")
+            }
+
+            // Behavior Tab
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Behavior")
+                    .font(.headline)
+
+                Toggle("Clear console before each run", isOn: $clearConsoleOnRun)
+
+                Text("Automatically clear the console output when running a new script.")
+                    .foregroundColor(.secondary)
+                    .font(.caption)
+
+                Spacer()
+            }
+            .padding()
+            .tabItem {
+                Label("Behavior", systemImage: "gearshape.2")
             }
             }
         }
