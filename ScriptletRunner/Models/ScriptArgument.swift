@@ -8,6 +8,7 @@ struct ScriptArgument: Identifiable, Hashable, Codable {
     let requiresValue: Bool
     let isPositional: Bool
     let placeholder: String?
+    let choices: [String]?  // For arguments like [local|parallel|off]
 
     var isEnabled: Bool = false
     var value: String = ""
@@ -19,7 +20,8 @@ struct ScriptArgument: Identifiable, Hashable, Codable {
         description: String,
         requiresValue: Bool = false,
         isPositional: Bool = false,
-        placeholder: String? = nil
+        placeholder: String? = nil,
+        choices: [String]? = nil
     ) {
         self.id = id
         self.shortFlag = shortFlag
@@ -28,6 +30,7 @@ struct ScriptArgument: Identifiable, Hashable, Codable {
         self.requiresValue = requiresValue
         self.isPositional = isPositional
         self.placeholder = placeholder
+        self.choices = choices
     }
 
     var displayName: String {

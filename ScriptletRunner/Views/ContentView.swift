@@ -13,6 +13,7 @@ struct ContentView: View {
     @AppStorage("scanLocations") private var scanLocationsData: Data = Data()
     @AppStorage("appearanceMode") private var appearanceModeRaw: String = AppearanceMode.system.rawValue
     @AppStorage("savedChains") private var savedChainsData: Data = Data()
+    @AppStorage("scriptIcons") private var scriptIconsData: Data = Data()
 
     @State private var scripts: [Script] = []
     @State private var chains: [ScriptChain] = []
@@ -22,7 +23,6 @@ struct ContentView: View {
     @State private var selectedArguments: [ScriptArgument] = []
     @State private var searchText = ""
     @State private var showingSettings = false
-    @State private var showingChainEditor = false
     @State private var editingChain: ScriptChain?
 
     private var scanLocations: [ScanLocation] {
@@ -31,6 +31,18 @@ struct ContentView: View {
 
     private var appearanceMode: AppearanceMode {
         AppearanceMode(rawValue: appearanceModeRaw) ?? .system
+    }
+
+    private var scriptIcons: [String: String] {
+        get { (try? JSONDecoder().decode([String: String].self, from: scriptIconsData)) ?? [:] }
+    }
+
+    private func setScriptIcon(_ icon: String?, for path: String) {
+        var icons = scriptIcons
+        icons[path] = icon
+        if let data = try? JSONEncoder().encode(icons) {
+            scriptIconsData = data
+        }
     }
 
     var body: some View {
@@ -53,7 +65,15 @@ struct ContentView: View {
                     ScriptListView(
                         scripts: scripts,
                         selectedScript: $selectedScript,
-                        searchText: $searchText
+                        searchText: $searchText,
+                        scriptIcons: Binding(
+                            get: { scriptIcons },
+                            set: { newIcons in
+                                if let data = try? JSONEncoder().encode(newIcons) {
+                                    scriptIconsData = data
+                                }
+                            }
+                        )
                     )
                 case .chains:
                     VStack(spacing: 0) {
@@ -85,7 +105,11 @@ struct ContentView: View {
                         ScriptDetailView(
                             script: script,
                             arguments: $selectedArguments,
-                            onRun: runSelectedScript
+                            icon: scriptIcons[script.path],
+                            onRun: runSelectedScript,
+                            onIconChange: { newIcon in
+                                setScriptIcon(newIcon, for: script.path)
+                            }
                         )
 
                         Divider()
@@ -108,7 +132,6 @@ struct ContentView: View {
                         runner: chainRunner,
                         onEdit: {
                             editingChain = chain
-                            showingChainEditor = true
                         },
                         onDelete: {
                             deleteChain(chain)
@@ -159,18 +182,19 @@ struct ContentView: View {
                 )
             )
         }
-        .sheet(isPresented: $showingChainEditor) {
-            if let chain = editingChain {
-                ChainEditorView(
-                    chain: Binding(
-                        get: { chain },
-                        set: { editingChain = $0 }
-                    ),
-                    scripts: scripts,
-                    isNew: !chains.contains(where: { $0.id == chain.id }),
-                    onSave: saveChain
-                )
-            }
+        .sheet(item: $editingChain) { chain in
+            ChainEditorView(
+                chain: Binding(
+                    get: { chain },
+                    set: { editingChain = $0 }
+                ),
+                scripts: scripts,
+                isNew: !chains.contains(where: { $0.id == chain.id }),
+                onSave: { savedChain in
+                    saveChain(savedChain)
+                    editingChain = nil
+                }
+            )
         }
         .preferredColorScheme(appearanceMode.colorScheme)
         .onAppear {
@@ -218,9 +242,7 @@ struct ContentView: View {
     }
 
     private func createNewChain() {
-        let newChain = ScriptChain(name: "New Chain")
-        editingChain = newChain
-        showingChainEditor = true
+        editingChain = ScriptChain(name: "New Chain")
     }
 
     private func saveChain(_ chain: ScriptChain) {

@@ -23,6 +23,13 @@ class ScriptRunner: ObservableObject {
         // Determine shell
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
 
+        // Pass environment variables for GUI operations (browser, etc.)
+        var env = ProcessInfo.processInfo.environment
+        env["HOME"] = NSHomeDirectory()
+        env["USER"] = NSUserName()
+        env["TERM"] = "xterm-256color"
+        process.environment = env
+
         // Build command with arguments
         var commandArgs = ["-c"]
         var scriptCommand = "\"\(script.path)\""

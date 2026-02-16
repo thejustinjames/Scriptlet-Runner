@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 enum AppearanceMode: String, CaseIterable {
     case system = "System"
@@ -19,7 +20,6 @@ struct SettingsView: View {
     @Binding var locations: [ScanLocation]
     @Binding var appearanceMode: AppearanceMode
     @State private var selectedLocation: ScanLocation?
-    @State private var showingFilePicker = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -62,7 +62,7 @@ struct SettingsView: View {
 
                 HStack {
                     Button {
-                        showingFilePicker = true
+                        showFolderPicker()
                     } label: {
                         Label("Add Folder", systemImage: "plus")
                     }
@@ -111,21 +111,34 @@ struct SettingsView: View {
             }
         }
         .frame(width: 500, height: 450)
-        .fileImporter(
-            isPresented: $showingFilePicker,
-            allowedContentTypes: [.folder],
-            allowsMultipleSelection: false
-        ) { result in
-            switch result {
-            case .success(let urls):
-                if let url = urls.first {
+    }
+
+    private func showFolderPicker() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.message = "Select a folder containing shell scripts"
+        panel.prompt = "Add Folder"
+        panel.showsHiddenFiles = false
+        panel.treatsFilePackagesAsDirectories = false
+
+        // Present as sheet on the key window if available, otherwise use modal
+        if let window = NSApp.keyWindow {
+            panel.beginSheetModal(for: window) { response in
+                if response == .OK, let url = panel.url {
                     let newLocation = ScanLocation(path: url.path)
-                    if !locations.contains(where: { $0.path == newLocation.path }) {
-                        locations.append(newLocation)
+                    if !self.locations.contains(where: { $0.path == newLocation.path }) {
+                        self.locations.append(newLocation)
                     }
                 }
-            case .failure(let error):
-                print("Error selecting folder: \(error)")
+            }
+        } else {
+            if panel.runModal() == .OK, let url = panel.url {
+                let newLocation = ScanLocation(path: url.path)
+                if !locations.contains(where: { $0.path == newLocation.path }) {
+                    locations.append(newLocation)
+                }
             }
         }
     }

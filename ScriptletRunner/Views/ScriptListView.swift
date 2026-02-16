@@ -4,6 +4,7 @@ struct ScriptListView: View {
     let scripts: [Script]
     @Binding var selectedScript: Script?
     @Binding var searchText: String
+    @Binding var scriptIcons: [String: String]  // path -> SF Symbol name
 
     var filteredScripts: [Script] {
         if searchText.isEmpty {
@@ -42,7 +43,7 @@ struct ScriptListView: View {
             // Script list
             List(selection: $selectedScript) {
                 ForEach(filteredScripts) { script in
-                    ScriptRow(script: script)
+                    ScriptRow(script: script, icon: scriptIcons[script.path])
                         .tag(script)
                 }
             }
@@ -53,10 +54,15 @@ struct ScriptListView: View {
 
 struct ScriptRow: View {
     let script: Script
+    let icon: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
+                Image(systemName: icon ?? "doc.text")
+                    .foregroundColor(.accentColor)
+                    .frame(width: 20)
+
                 Text(script.displayName)
                     .fontWeight(.medium)
                     .lineLimit(1)

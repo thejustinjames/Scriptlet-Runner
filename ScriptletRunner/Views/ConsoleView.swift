@@ -1,7 +1,19 @@
 import SwiftUI
+import AppKit
 
 struct ConsoleView: View {
     @ObservedObject var runner: ScriptRunner
+
+    // Extract URLs from output
+    var detectedURLs: [URL] {
+        let pattern = #"https?://[^\s\"\'\<\>\]\)]+"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        let matches = regex.matches(in: runner.output, range: NSRange(runner.output.startIndex..., in: runner.output))
+        return matches.compactMap { match in
+            guard let range = Range(match.range, in: runner.output) else { return nil }
+            return URL(string: String(runner.output[range]))
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -32,6 +44,17 @@ struct ConsoleView: View {
                         .padding(.vertical, 2)
                         .background(code == 0 ? Color.green.opacity(0.1) : Color.red.opacity(0.1))
                         .cornerRadius(4)
+                }
+
+                // Open URL button if URLs detected
+                if let url = detectedURLs.first {
+                    Button {
+                        NSWorkspace.shared.open(url)
+                    } label: {
+                        Label("Open URL", systemImage: "safari")
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.blue)
                 }
 
                 Button {

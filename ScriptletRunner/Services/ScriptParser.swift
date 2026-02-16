@@ -15,9 +15,11 @@ class ScriptParser {
         var description = ""
         var usage: String?
         var arguments: [ScriptArgument] = []
+        var choicesFromUsage: [String] = []
 
         var inOptionsBlock = false
         var inArgumentsBlock = false
+        var inChoicesBlock = false
         var headerEnded = false
 
         for line in lines {
@@ -47,22 +49,43 @@ class ScriptParser {
                 description = String(commentContent.dropFirst(12)).trimmingCharacters(in: .whitespaces)
                 inOptionsBlock = false
                 inArgumentsBlock = false
+                inChoicesBlock = false
                 continue
             }
 
             // First non-empty comment as description fallback
-            if description.isEmpty && !commentContent.isEmpty &&
+            // Skip decoration lines (=== or ---)
+            let isDecoration = commentContent.allSatisfy { $0 == "=" || $0 == "-" || $0 == "#" || $0 == "*" }
+            if description.isEmpty && !commentContent.isEmpty && !isDecoration &&
                !commentContent.lowercased().hasPrefix("usage:") &&
                !commentContent.lowercased().hasPrefix("options:") &&
                !commentContent.lowercased().hasPrefix("arguments:") {
                 description = commentContent
             }
 
-            // Parse Usage
+            // Parse Usage and extract choices like [local|parallel|off]
             if commentContent.lowercased().hasPrefix("usage:") {
                 usage = String(commentContent.dropFirst(6)).trimmingCharacters(in: .whitespaces)
                 inOptionsBlock = false
                 inArgumentsBlock = false
+                inChoicesBlock = false
+
+                // Extract choices from usage like [opt1|opt2|opt3]
+                if let choices = extractChoicesFromUsage(usage!) {
+                    choicesFromUsage = choices
+                    inChoicesBlock = true
+                }
+                continue
+            }
+
+            // Parse usage example lines like: ./script.sh --option # description
+            if commentContent.contains("./") && commentContent.contains(".sh") {
+                if let arg = parseUsageExampleLine(commentContent) {
+                    // Only add if we don't already have this option
+                    if !arguments.contains(where: { $0.longFlag == arg.longFlag && $0.shortFlag == arg.shortFlag }) {
+                        arguments.append(arg)
+                    }
+                }
                 continue
             }
 
@@ -70,6 +93,7 @@ class ScriptParser {
             if commentContent.lowercased().hasPrefix("options:") {
                 inOptionsBlock = true
                 inArgumentsBlock = false
+                inChoicesBlock = false
                 continue
             }
 
@@ -77,6 +101,7 @@ class ScriptParser {
             if commentContent.lowercased().hasPrefix("arguments:") {
                 inOptionsBlock = false
                 inArgumentsBlock = true
+                inChoicesBlock = false
                 continue
             }
 
@@ -93,6 +118,30 @@ class ScriptParser {
                     arguments.append(arg)
                 }
             }
+
+            // Parse choice description lines (name - description or name  description)
+            if inChoicesBlock && !choicesFromUsage.isEmpty {
+                if let arg = parseChoiceLine(commentContent, validChoices: choicesFromUsage) {
+                    arguments.append(arg)
+                }
+            }
+        }
+
+        // If we found choices in usage but no individual args, create one combined choice arg
+        if !choicesFromUsage.isEmpty && arguments.isEmpty {
+            arguments.append(ScriptArgument(
+                description: "Select mode",
+                requiresValue: true,
+                isPositional: true,
+                placeholder: "mode",
+                choices: choicesFromUsage
+            ))
+        }
+
+        // If no arguments found from comments, try parsing script body
+        if arguments.isEmpty {
+            let bodyArgs = parseScriptBody(lines)
+            arguments.append(contentsOf: bodyArgs)
         }
 
         return Script(
@@ -101,6 +150,149 @@ class ScriptParser {
             description: description,
             usage: usage,
             arguments: arguments
+        )
+    }
+
+    private func parseScriptBody(_ lines: [String]) -> [ScriptArgument] {
+        var arguments: [ScriptArgument] = []
+        var foundOptions: Set<String> = []
+
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+            // Look for case patterns like: "local"|"parallel"|"off")
+            // or "local"|"simulation"|"1")
+            if trimmed.contains(")") && (trimmed.contains("\"") || trimmed.contains("'")) {
+                let casePattern = #"\"([a-zA-Z0-9_-]+)\""#
+                if let regex = try? NSRegularExpression(pattern: casePattern) {
+                    let matches = regex.matches(in: trimmed, range: NSRange(trimmed.startIndex..., in: trimmed))
+                    for match in matches {
+                        if let range = Range(match.range(at: 1), in: trimmed) {
+                            let option = String(trimmed[range])
+                            // Skip numeric options and common non-options
+                            if !option.allSatisfy({ $0.isNumber }) &&
+                               option != "esac" && option.count > 1 &&
+                               !foundOptions.contains(option) {
+                                foundOptions.insert(option)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Look for echo lines with option descriptions like:
+            // echo "  local    - Full local simulation"
+            // echo "  --execute # Actually perform the push"
+            if trimmed.hasPrefix("echo") && trimmed.contains(" - ") {
+                // Pattern: echo "  optionname   - description"
+                let echoPattern = #"echo\s+[\"']\s*([a-zA-Z][a-zA-Z0-9_-]*)\s+[-–]\s+(.+?)[\"']"#
+                if let regex = try? NSRegularExpression(pattern: echoPattern),
+                   let match = regex.firstMatch(in: trimmed, range: NSRange(trimmed.startIndex..., in: trimmed)) {
+                    if let nameRange = Range(match.range(at: 1), in: trimmed),
+                       let descRange = Range(match.range(at: 2), in: trimmed) {
+                        let name = String(trimmed[nameRange])
+                        let desc = String(trimmed[descRange]).trimmingCharacters(in: CharacterSet(charactersIn: "\"'()"))
+
+                        // Filter out things that look like paths or URLs
+                        if name.count >= 2 && name.count <= 20 &&
+                           !name.contains(".") && !name.contains("/") &&
+                           !foundOptions.contains(name) {
+                            arguments.append(ScriptArgument(
+                                description: desc,
+                                requiresValue: false,
+                                isPositional: true,
+                                placeholder: name
+                            ))
+                            foundOptions.insert(name)
+                        }
+                    }
+                }
+            }
+        }
+
+        return arguments
+    }
+
+    private func extractChoicesFromUsage(_ usage: String) -> [String]? {
+        // Match patterns like [local|parallel|off] or [opt1|opt2]
+        let pattern = #"\[([a-zA-Z0-9_]+(?:\|[a-zA-Z0-9_]+)+)\]"#
+
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: usage, range: NSRange(usage.startIndex..., in: usage)),
+              let range = Range(match.range(at: 1), in: usage) else {
+            return nil
+        }
+
+        let choicesStr = String(usage[range])
+        return choicesStr.components(separatedBy: "|")
+    }
+
+    private func parseUsageExampleLine(_ line: String) -> ScriptArgument? {
+        // Match patterns like:
+        // ./script.sh --execute # Actually perform the push
+        // ./script.sh -v        # Verbose mode
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+        // Look for --option or -o followed by description after #
+        let pattern = #"\.sh\s+(--?[a-zA-Z][-a-zA-Z0-9]*)\s*(?:#\s*(.+))?$"#
+
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: trimmed, range: NSRange(trimmed.startIndex..., in: trimmed)) else {
+            return nil
+        }
+
+        let flag = extractGroup(1, from: match, in: trimmed)
+        let desc = extractGroup(2, from: match, in: trimmed) ?? ""
+
+        guard let flagStr = flag else { return nil }
+
+        if flagStr.hasPrefix("--") {
+            return ScriptArgument(
+                longFlag: flagStr,
+                description: desc.trimmingCharacters(in: .whitespaces),
+                requiresValue: false
+            )
+        } else {
+            return ScriptArgument(
+                shortFlag: flagStr,
+                description: desc.trimmingCharacters(in: .whitespaces),
+                requiresValue: false
+            )
+        }
+    }
+
+    private func parseChoiceLine(_ line: String, validChoices: [String]) -> ScriptArgument? {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return nil }
+
+        // Match patterns like:
+        // local     - Full local simulation
+        // local       Full local simulation
+        // local  Description text
+        let pattern = #"^([a-zA-Z0-9_-]+)\s+[-–]?\s*(.+)$"#
+
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: trimmed, range: NSRange(trimmed.startIndex..., in: trimmed)) else {
+            return nil
+        }
+
+        guard let nameRange = Range(match.range(at: 1), in: trimmed),
+              let descRange = Range(match.range(at: 2), in: trimmed) else {
+            return nil
+        }
+
+        let name = String(trimmed[nameRange])
+        let desc = String(trimmed[descRange]).trimmingCharacters(in: .whitespaces)
+
+        // Only create argument if name matches one of the valid choices
+        guard validChoices.contains(name) else { return nil }
+
+        return ScriptArgument(
+            description: desc,
+            requiresValue: false,
+            isPositional: true,
+            placeholder: name,
+            choices: nil  // Individual choice, not a picker
         )
     }
 

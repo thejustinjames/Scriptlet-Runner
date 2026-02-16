@@ -5,14 +5,19 @@ class ScriptScanner: ObservableObject {
     private let fileManager = FileManager.default
 
     func scan(locations: [ScanLocation]) -> [Script] {
-        var scripts: [Script] = []
+        var scriptsByPath: [String: Script] = [:]
 
         for location in locations where location.isEnabled && location.exists {
             let found = scanDirectory(at: location.url, recursive: location.recursive)
-            scripts.append(contentsOf: found)
+            for script in found {
+                // Only add if not already found (prevents duplicates from overlapping locations)
+                if scriptsByPath[script.path] == nil {
+                    scriptsByPath[script.path] = script
+                }
+            }
         }
 
-        return scripts.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        return Array(scriptsByPath.values).sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
     func scan(directory: URL, recursive: Bool = true) -> [Script] {
